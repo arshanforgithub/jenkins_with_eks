@@ -12,14 +12,14 @@ spec:
       args: ['99d']
       resources:
         requests:
-          cpu: "300m"
-          memory: "768Mi"
+          cpu: "200m"
+          memory: "400Mi"
         limits:
-          cpu: "600m"
-          memory: "1536Mi"
+          cpu: "400m"
+          memory: "700Mi"
       env:
         - name: MAVEN_OPTS
-          value: "-Xms256m -Xmx512m"
+          value: "-Xms128m -Xmx384m"
 """
         }
     }
@@ -45,7 +45,7 @@ spec:
         stage('Test') {
             steps {
                 container('maven') {
-                    echo 'Running unit tests...'
+                    echo 'Running tests...'
                     sh 'echo All tests passed'
                 }
             }
@@ -53,8 +53,8 @@ spec:
         stage('Package') {
             steps {
                 container('maven') {
-                    echo 'Packaging application...'
-                    sh 'echo JAR created successfully'
+                    echo 'Packaging...'
+                    sh 'echo JAR created'
                 }
             }
         }
@@ -75,9 +75,6 @@ spec:
     post {
         success {
             echo "Build successful. Spot agent terminating shortly."
-        }
-        failure {
-            echo "Build failed. Check logs above."
         }
     }
 }
