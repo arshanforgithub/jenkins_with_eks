@@ -34,7 +34,6 @@ spec:
 
     options {
         timeout(time: 30, unit: 'MINUTES')      // prevents a stuck build from hogging a Spot node forever
-        timestamps()                             // adds timestamps to every console line
         disableConcurrentBuilds()                // avoids two builds racing on the same workspace
         buildDiscarder(logRotator(numToKeepStr: '20')) // keeps build history from growing unbounded
     }
