@@ -20,6 +20,17 @@ spec:
       env:
         - name: MAVEN_OPTS
           value: "-Xms128m -Xmx384m"
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:debug
+      command: ['sleep']
+      args: ['99d']
+      resources:
+        requests:
+          cpu: "200m"
+          memory: "300Mi"
+        limits:
+          cpu: "500m"
+          memory: "600Mi"
 """
         }
     }
@@ -36,6 +47,10 @@ spec:
         timeout(time: 30, unit: 'MINUTES')      // prevents a stuck build from hogging a Spot node forever
         disableConcurrentBuilds()                // avoids two builds racing on the same workspace
         buildDiscarder(logRotator(numToKeepStr: '20')) // keeps build history from growing unbounded
+    }
+
+    environment {
+        ECR_REPO = "6XXXXXXX0.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
     }
 
     stages {
@@ -89,6 +104,21 @@ spec:
                 success {
                     
                     archiveArtifacts artifacts: 'target/*.jar', fingerprint: true, allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Build & Push Docker Image') {
+            steps {
+                container('kaniko') {
+                    echo "Building and pushing image: ${ECR_REPO}:${BUILD_NUMBER}"
+                    sh """
+                        /kaniko/executor \
+                          --context=`pwd` \
+                          --dockerfile=Dockerfile \
+                          --destination=${ECR_REPO}:${BUILD_NUMBER} \
+                          --destination=${ECR_REPO}:latest
+                    """
                 }
             }
         }
