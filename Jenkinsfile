@@ -20,17 +20,46 @@ spec:
       env:
         - name: MAVEN_OPTS
           value: "-Xms128m -Xmx384m"
-    - name: kaniko
-      image: gcr.io/kaniko-project/executor:debug
+    - name: aws-cli
+      image: amazon/aws-cli:2.17.62
       command: ['sleep']
       args: ['99d']
       resources:
         requests:
-          cpu: "200m"
-          memory: "300Mi"
+          cpu: "100m"
+          memory: "150Mi"
         limits:
-          cpu: "500m"
-          memory: "600Mi"
+          cpu: "200m"
+          memory: "250Mi"
+      volumeMounts:
+        - name: docker-config
+          mountPath: /docker-config
+    - name: buildkit
+      image: moby/buildkit:master-rootless
+      args: ["--oci-worker-no-process-sandbox"]
+      securityContext:
+        seccompProfile:
+          type: Unconfined
+        runAsUser: 1000
+        runAsGroup: 1000
+      resources:
+        requests:
+          cpu: "300m"
+          memory: "400Mi"
+        limits:
+          cpu: "800m"
+          memory: "1Gi"
+      env:
+        - name: DOCKER_CONFIG
+          value: /docker-config
+        - name: BUILDKIT_HOST
+          value: unix:///run/user/1000/buildkit/buildkitd.sock
+      volumeMounts:
+        - name: docker-config
+          mountPath: /docker-config
+  volumes:
+    - name: docker-config
+      emptyDir: {}
 """
         }
     }
@@ -40,6 +69,7 @@ spec:
         choice(name: 'BUILD_TYPE', choices: ['Quick Build', 'Full Build with Tests'], description: 'Choose build depth')
         booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run unit tests?')
         booleanParam(name: 'DEPLOY_TO_STAGING', defaultValue: false, description: 'Deploy to staging after build?')
+        booleanParam(name: 'DEPLOY_TO_PROD', defaultValue: false, description: 'Deploy to production after build?')
         string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Branch to build')
     }
 
@@ -50,7 +80,9 @@ spec:
     }
 
     environment {
-        ECR_REPO = "6XXXXXXX0.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
+        ECR_REGISTRY = "6XXXXXXX0.dkr.ecr.us-west-2.amazonaws.com"
+        ECR_REPO     = "6XXXXXXX0.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
+        AWS_REGION   = "us-west-2"
     }
 
     stages {
@@ -108,16 +140,34 @@ spec:
             }
         }
 
+        stage('ECR Login') {
+            steps {
+                container('aws-cli') {
+                    // Generates a short-lived ECR auth token using the Spot node's IAM role
+                    // and writes it as a docker-style config.json onto the shared volume,
+                    // so the BuildKit container (which has no AWS CLI) can push using it.
+                    sh """
+                        mkdir -p /docker-config
+                        TOKEN=\$(aws ecr get-login-password --region ${AWS_REGION})
+                        AUTH=\$(echo -n "AWS:\$TOKEN" | base64 -w0)
+                        cat > /docker-config/config.json <<EOF
+{"auths":{"${ECR_REGISTRY}":{"auth":"\$AUTH"}}}
+EOF
+                    """
+                }
+            }
+        }
+
         stage('Build & Push Docker Image') {
             steps {
-                container('kaniko') {
+                container('buildkit') {
                     echo "Building and pushing image: ${ECR_REPO}:${BUILD_NUMBER}"
                     sh """
-                        /kaniko/executor \
-                          --context=`pwd` \
-                          --dockerfile=Dockerfile \
-                          --destination=${ECR_REPO}:${BUILD_NUMBER} \
-                          --destination=${ECR_REPO}:latest
+                        buildctl build \
+                          --frontend dockerfile.v0 \
+                          --local context=. \
+                          --local dockerfile=. \
+                          --output type=image,name=${ECR_REPO}:${BUILD_NUMBER},name=${ECR_REPO}:latest,push=true
                     """
                 }
             }
@@ -126,13 +176,14 @@ spec:
         
         stage('Approval Gate') {
             when {
-                expression { return params.DEPLOY_TO_STAGING }
+                expression { return params.DEPLOY_TO_STAGING || params.DEPLOY_TO_PROD }
             }
             steps {
                 script {
+                    def targetEnv = params.DEPLOY_TO_PROD ? "PRODUCTION" : "staging"
                     def userInput = input(
                         id: 'deployApproval',
-                        message: 'Deploy this build to staging?',
+                        message: "Deploy build #${BUILD_NUMBER} to ${targetEnv}?",
                         ok: 'Deploy',
                         submitter: 'admin,devops-team',   // restrict who can approve
                         parameters: [
@@ -148,12 +199,28 @@ spec:
 
         stage('Deploy to Staging') {
             when {
-                expression { return params.DEPLOY_TO_STAGING }
+                expression { return params.DEPLOY_TO_STAGING && !params.DEPLOY_TO_PROD }
             }
             steps {
-                container('maven') {
-                    echo 'Deploying to staging environment...'
-                    sh 'echo "kubectl apply / helm upgrade goes here"'
+                lock('staging-deploy') {
+                    container('maven') {
+                        echo "Deploying build #${BUILD_NUMBER} to staging..."
+                        sh "echo kubectl set image deployment/app-staging app=${ECR_REPO}:${BUILD_NUMBER} -n staging"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            when {
+                expression { return params.DEPLOY_TO_PROD }
+            }
+            steps {
+                lock('production-deploy') {
+                    container('maven') {
+                        echo "Deploying build #${BUILD_NUMBER} to PRODUCTION..."
+                        sh "echo kubectl set image deployment/app-prod app=${ECR_REPO}:${BUILD_NUMBER} -n production"
+                    }
                 }
             }
         }
