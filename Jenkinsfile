@@ -167,7 +167,7 @@ EOF
                           --frontend dockerfile.v0 \
                           --local context=. \
                           --local dockerfile=. \
-                          --output type=image,name=${ECR_REPO}:${BUILD_NUMBER},name=${ECR_REPO}:latest,push=true
+                          --output type=image,name=${ECR_REPO}:${BUILD_NUMBER},${ECR_REPO}:latest,push=true
                     """
                 }
             }
