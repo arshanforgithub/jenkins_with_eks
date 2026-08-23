@@ -163,14 +163,14 @@ EOF
                           --frontend dockerfile.v0 \
                           --local context=. \
                           --local dockerfile=. \
-                          --output type=image,name=${ECR_REPO}:${BUILD_NUMBER},push=true,oci-mediatypes=false
+                          --output type=image,name=${ECR_REPO}:${BUILD_NUMBER},push=true,compression=gzip,force-compression=true
                     """
                     sh """
                         buildctl build \
                           --frontend dockerfile.v0 \
                           --local context=. \
                           --local dockerfile=. \
-                          --output type=image,name=${ECR_REPO}:latest,push=true,oci-mediatypes=false
+                          --output type=image,name=${ECR_REPO}:latest,push=true,compression=gzip,force-compression=true
                     """
                 }
             }
