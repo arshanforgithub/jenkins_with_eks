@@ -64,7 +64,6 @@ spec:
         }
     }
 
-    
     parameters {
         choice(name: 'BUILD_TYPE', choices: ['Quick Build', 'Full Build with Tests'], description: 'Choose build depth')
         booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run unit tests?')
@@ -74,8 +73,8 @@ spec:
     }
 
     options {
-        timeout(time: 30, unit: 'MINUTES')      // prevents a stuck build from hogging a Spot node forever
-        disableConcurrentBuilds()                // avoids two builds racing on the same workspace
+        timeout(time: 30, unit: 'MINUTES')               // prevents a stuck build from hogging a Spot node forever
+        disableConcurrentBuilds()                        // avoids two builds racing on the same workspace
         buildDiscarder(logRotator(numToKeepStr: '20')) // keeps build history from growing unbounded
     }
 
@@ -86,7 +85,6 @@ spec:
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 container('maven') {
@@ -119,7 +117,6 @@ spec:
             }
             post {
                 always {
-                    
                     junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
                 }
             }
@@ -134,7 +131,6 @@ spec:
             }
             post {
                 success {
-                    
                     archiveArtifacts artifacts: 'target/*.jar', fingerprint: true, allowEmptyArchive: true
                 }
             }
@@ -167,13 +163,19 @@ EOF
                           --frontend dockerfile.v0 \
                           --local context=. \
                           --local dockerfile=. \
-                          --output type=image,name=${ECR_REPO}:${BUILD_NUMBER},${ECR_REPO}:latest,push=true
+                          --output type=image,name=${ECR_REPO}:${BUILD_NUMBER},push=true
+                    """
+                    sh """
+                        buildctl build \
+                          --frontend dockerfile.v0 \
+                          --local context=. \
+                          --local dockerfile=. \
+                          --output type=image,name=${ECR_REPO}:latest,push=true
                     """
                 }
             }
         }
 
-        
         stage('Approval Gate') {
             when {
                 expression { return params.DEPLOY_TO_STAGING || params.DEPLOY_TO_PROD }
@@ -229,10 +231,10 @@ EOF
             steps {
                 container('maven') {
                     sh '''
-                      echo "===================================="
-                      echo "Build complete on Spot instance"
-                      echo "Node: $(hostname)"
-                      echo "===================================="
+                        echo "===================================="
+                        echo "Build complete on Spot instance"
+                        echo "Node: $(hostname)"
+                        echo "===================================="
                     '''
                 }
             }
