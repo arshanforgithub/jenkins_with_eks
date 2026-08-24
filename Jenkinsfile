@@ -31,35 +31,6 @@ spec:
         limits:
           cpu: "200m"
           memory: "250Mi"
-      volumeMounts:
-        - name: docker-config
-          mountPath: /docker-config
-    - name: buildkit
-      image: moby/buildkit:master-rootless
-      args: ["--oci-worker-no-process-sandbox"]
-      securityContext:
-        seccompProfile:
-          type: Unconfined
-        runAsUser: 1000
-        runAsGroup: 1000
-      resources:
-        requests:
-          cpu: "300m"
-          memory: "400Mi"
-        limits:
-          cpu: "800m"
-          memory: "1Gi"
-      env:
-        - name: DOCKER_CONFIG
-          value: /docker-config
-        - name: BUILDKIT_HOST
-          value: unix:///run/user/1000/buildkit/buildkitd.sock
-      volumeMounts:
-        - name: docker-config
-          mountPath: /docker-config
-  volumes:
-    - name: docker-config
-      emptyDir: {}
 """
         }
     }
@@ -139,38 +110,9 @@ spec:
         stage('ECR Login') {
             steps {
                 container('aws-cli') {
-                    // Generates a short-lived ECR auth token using the Spot node's IAM role
-                    // and writes it as a docker-style config.json onto the shared volume,
-                    // so the BuildKit container (which has no AWS CLI) can push using it.
                     sh """
-                        mkdir -p /docker-config
                         TOKEN=\$(aws ecr get-login-password --region ${AWS_REGION})
-                        AUTH=\$(echo -n "AWS:\$TOKEN" | base64 -w0)
-                        cat > /docker-config/config.json <<EOF
-{"auths":{"${ECR_REGISTRY}":{"auth":"\$AUTH"}}}
-EOF
-                    """
-                }
-            }
-        }
-
-        stage('Build & Push Docker Image') {
-            steps {
-                container('buildkit') {
-                    echo "Building and pushing image: ${ECR_REPO}:${BUILD_NUMBER}"
-                    sh """
-                        buildctl build \
-                          --frontend dockerfile.v0 \
-                          --local context=. \
-                          --local dockerfile=. \
-                          --output type=image,name=${ECR_REPO}:${BUILD_NUMBER},push=true,compression=gzip,force-compression=true
-                    """
-                    sh """
-                        buildctl build \
-                          --frontend dockerfile.v0 \
-                          --local context=. \
-                          --local dockerfile=. \
-                          --output type=image,name=${ECR_REPO}:latest,push=true,compression=gzip,force-compression=true
+                        echo "ECR Login Token retrieved"
                     """
                 }
             }
@@ -244,12 +186,9 @@ EOF
     post {
         success {
             echo " Build #${env.BUILD_NUMBER} successful. Spot agent terminating shortly."
-            // Slack/email notification - requires Slack plugin + configured webhook credential
-            // slackSend(channel: '#builds', color: 'good', message: " Build ${env.BUILD_NUMBER} succeeded: ${env.BUILD_URL}")
         }
         failure {
             echo " Build #${env.BUILD_NUMBER} failed."
-            // slackSend(channel: '#builds', color: 'danger', message: " Build ${env.BUILD_NUMBER} failed: ${env.BUILD_URL}")
         }
         always {
             echo "Pipeline finished with status: ${currentBuild.currentResult}"
