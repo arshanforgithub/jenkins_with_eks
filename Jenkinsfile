@@ -109,12 +109,38 @@ spec:
             }
         }
 
-        stage('ECR Login') {
+        stage('Upload Artifacts to S3') {
             steps {
                 container('aws-cli') {
                     sh """
-                        TOKEN=\$(aws ecr get-login-password --region ${AWS_REGION})
-                        echo "ECR Login Token retrieved"
+                        echo "Renaming jar for staging..."
+                        cp target/jenkins-eks-demo.jar app.jar
+
+                        echo "Uploading app.jar and Dockerfile to S3..."
+                        aws s3 cp app.jar s3://${S3_STAGING_BUCKET}/${BUILD_NUMBER}/app.jar
+                        aws s3 cp Dockerfile s3://${S3_STAGING_BUCKET}/${BUILD_NUMBER}/Dockerfile
+
+                        echo "Upload complete for build ${BUILD_NUMBER}"
+                    """
+                }
+            }
+        }
+
+        stage('Trigger AWS CodeBuild') {
+            steps {
+                container('aws-cli') {
+                    sh """
+                        echo "Starting CodeBuild project ${CODEBUILD_PROJECT} for build ${BUILD_NUMBER}..."
+
+                        aws codebuild start-build \
+                            --project-name ${CODEBUILD_PROJECT} \
+                            --environment-variables-override name=BUILD_ID,value=${BUILD_NUMBER},type=PLAINTEXT \
+                            --region ${AWS_REGION} > codebuild-result.json
+
+                        cat codebuild-result.json
+
+                        BUILD_ID_STARTED=\$(cat codebuild-result.json | grep -o '"id": "[^"]*' | head -1 | cut -d'"' -f4)
+                        echo "CodeBuild started: \$BUILD_ID_STARTED"
                     """
                 }
             }
