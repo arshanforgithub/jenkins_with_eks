@@ -51,11 +51,11 @@ spec:
     }
 
     environment {
-        ECR_REGISTRY       = "676278186770.dkr.ecr.us-west-2.amazonaws.com"
-        ECR_REPO           = "676278186770.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
-        AWS_REGION         = "us-west-2"
-        S3_STAGING_BUCKET  = "jenkins-eks-demo-staging-676278186770"
-        CODEBUILD_PROJECT  = "jenkins-eks-demo-image-build"
+        ECR_REGISTRY      = "676278186770.dkr.ecr.us-west-2.amazonaws.com"
+        ECR_REPO          = "676278186770.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
+        AWS_REGION        = "us-west-2"
+        S3_STAGING_BUCKET = "jenkins-eks-demo-staging-676278186770"
+        CODEBUILD_PROJECT = "jenkins-eks-demo-image-build"
     }
 
     stages {
@@ -142,6 +142,21 @@ spec:
 
                         BUILD_ID_STARTED=\$(cat codebuild-result.json | grep -o '"id": "[^"]*' | head -1 | cut -d'"' -f4)
                         echo "CodeBuild started: \$BUILD_ID_STARTED"
+
+                        echo "Waiting for CodeBuild to finish..."
+                        STATUS="IN_PROGRESS"
+                        while [ "\$STATUS" = "IN_PROGRESS" ]; do
+                            sleep 15
+                            STATUS=\$(aws codebuild batch-get-builds --ids "\$BUILD_ID_STARTED" --region ${AWS_REGION} --query 'builds[0].buildStatus' --output text)
+                            echo "Current status: \$STATUS"
+                        done
+
+                        if [ "\$STATUS" != "SUCCEEDED" ]; then
+                            echo "CodeBuild failed with status: \$STATUS"
+                            exit 1
+                        fi
+
+                        echo "CodeBuild succeeded."
                     """
                 }
             }
