@@ -5,6 +5,7 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
+  serviceAccountName: jenkins
   containers:
     - name: maven
       image: maven:3.9.6-eclipse-temurin-17
