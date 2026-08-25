@@ -51,11 +51,11 @@ spec:
     }
 
     environment {
-        ECR_REGISTRY      = "676278186770.dkr.ecr.us-west-2.amazonaws.com"
-        ECR_REPO          = "676278186770.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
-        AWS_REGION        = "us-west-2"
-        S3_STAGING_BUCKET = "jenkins-eks-demo-staging-676278186770"
-        CODEBUILD_PROJECT = "jenkins-eks-demo-image-build"
+        ECR_REGISTRY       = "676278186770.dkr.ecr.us-west-2.amazonaws.com"
+        ECR_REPO           = "676278186770.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
+        AWS_REGION         = "us-west-2"
+        S3_STAGING_BUCKET  = "jenkins-eks-demo-staging-676278186770"
+        CODEBUILD_PROJECT  = "jenkins-eks-demo-image-build"
     }
 
     stages {
