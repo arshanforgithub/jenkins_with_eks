@@ -47,15 +47,15 @@ spec:
     options {
         timeout(time: 30, unit: 'MINUTES')               // prevents a stuck build from hogging a Spot node forever
         disableConcurrentBuilds()                        // avoids two builds racing on the same workspace
-        buildDiscarder(logRotator(numToKeepStr: '20')) // keeps build history from growing unbounded
+        buildDiscarder(logRotator(numToKeepStr: '20'))   // keeps build history from growing unbounded
     }
 
     environment {
-        ECR_REGISTRY       = "676278186770.dkr.ecr.us-west-2.amazonaws.com"
-        ECR_REPO           = "676278186770.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
-        AWS_REGION         = "us-west-2"
-        S3_STAGING_BUCKET  = "jenkins-eks-demo-staging-676278186770"
-        CODEBUILD_PROJECT  = "jenkins-eks-demo-image-build"
+        ECR_REGISTRY      = "676278186770.dkr.ecr.us-west-2.amazonaws.com"
+        ECR_REPO          = "676278186770.dkr.ecr.us-west-2.amazonaws.com/jenkins-eks-demo"
+        AWS_REGION        = "us-west-2"
+        S3_STAGING_BUCKET = "jenkins-eks-demo-staging-676278186770"
+        CODEBUILD_PROJECT = "jenkins-eks-demo-image-build"
     }
 
     stages {
@@ -133,9 +133,9 @@ spec:
                     sh """
                         echo "Starting CodeBuild project ${CODEBUILD_PROJECT} for build ${BUILD_NUMBER}..."
 
-                        aws codebuild start-build \
-                            --project-name ${CODEBUILD_PROJECT} \
-                            --environment-variables-override name=BUILD_ID,value=${BUILD_NUMBER},type=PLAINTEXT \
+                        aws codebuild start-build \\
+                            --project-name ${CODEBUILD_PROJECT} \\
+                            --environment-variables-override name=BUILD_ID,value=${BUILD_NUMBER},type=PLAINTEXT \\
                             --region ${AWS_REGION} > codebuild-result.json
 
                         cat codebuild-result.json
@@ -189,11 +189,38 @@ spec:
             when {
                 expression { return params.DEPLOY_TO_STAGING && !params.DEPLOY_TO_PROD }
             }
+            agent {
+                kubernetes {
+                    yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins-deploy
+  containers:
+    - name: kubectl
+      image: bitnami/kubectl:1.29
+      command: ['sleep']
+      args: ['99d']
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "150Mi"
+        limits:
+          cpu: "200m"
+          memory: "250Mi"
+"""
+                }
+            }
             steps {
                 lock('staging-deploy') {
-                    container('maven') {
-                        echo "Deploying build #${BUILD_NUMBER} to staging..."
-                        sh "echo kubectl set image deployment/app-staging app=${ECR_REPO}:${BUILD_NUMBER} -n staging"
+                    container('kubectl') {
+                        sh """
+                            echo "Deploying build #${BUILD_NUMBER} to staging..."
+                            kubectl set image deployment/app-deployment app=${ECR_REPO}:${BUILD_NUMBER} -n staging
+
+                            echo "Waiting for rollout to finish..."
+                            kubectl rollout status deployment/app-deployment -n staging --timeout=120s
+                        """
                     }
                 }
             }
